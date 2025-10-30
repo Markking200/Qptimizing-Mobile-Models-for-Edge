@@ -1,0 +1,89 @@
+[
+  {
+    "model_name": "mobilenet_v2",
+    "variant": "fp32",
+    "format": "torchscript",
+    "precision": "fp32",
+    "quantization": {
+      "type": "None",
+      "engine": "None"
+    },
+
+    "hardware": {
+      "profile": "cpu_x86_12700H",
+      "arch": "x86_64",
+      "cpu_only": false,
+      "has_cuda": true,
+      "used_cuda": true,
+      "device_name": "Intel i7-12700H + RTX 3070 Laptop",
+      "backend": "fbgemm"
+    },
+
+    "benchmark": {
+      "dataset": "imagenet_val_subset50",
+      "batch_size": 1,
+      "latency_ms_per_sample": 11.9,
+      "throughput_fps": 84.0,
+      "peak_ram_mb": 120.3,
+      "accuracy_top1": 0.713,
+      "accuracy_top5": 0.901,
+      "num_samples_eval": 50
+    },
+
+    "artifact": {
+      "path": "/opt/models/mobilenet_v2_static_int8/mobilenet_v2_static_int8_ts.pt",
+      "disk_size_mb": 3.2
+    },
+
+    "env": {
+      "torch": "2.6.0",
+      "torchvision": "0.20.0",
+      "os": "ubuntu_22_04"
+    },
+
+    "timestamp": "2025-10-24T17:55:13Z"
+  },
+
+  {
+    "model_name": "mobilenet_v2_static",
+    "variant": "int8",
+    "format": "torchscript",
+    "precision": "int8",
+
+    "quantization": null,
+
+    "hardware": {
+      "profile": "cpu_x86_12700H",
+      "arch": "x86_64",
+      "cpu_only": true,
+      "has_cuda": true,
+      "used_cuda": false,
+      "device_name": "Intel i7-12700H + RTX 3070 Laptop",
+      "backend": "cuda_fp16"
+    },
+
+    "benchmark": {
+      "dataset": "imagenet_val_subset50",
+      "batch_size": 1,
+      "latency_ms_per_sample": 2.4,
+      "throughput_fps": 135.0,
+      "peak_ram_mb": 512.7,
+      "accuracy_top1": 0.719,
+      "accuracy_top5": 0.903,
+      "num_samples_eval": 50
+    },
+
+    "artifact": {
+      "path": "/opt/models/mobilenet_v2_fp32/mobilenet_v2_fp32_fp16_ts.pt",
+      "disk_size_mb": 14.0
+    },
+
+    "env": {
+      "torch": "2.6.0",
+      "torchvision": "0.20.0",
+      "os": "ubuntu_22_04"
+    },
+
+    "timestamp": "2025-10-24T18:12:45Z"
+  }
+]
