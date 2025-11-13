@@ -308,6 +308,8 @@ def cmd_infer(args: argparse.Namespace) -> None:
     iscudaavailable= torch.cuda.is_available()
     #logging.info(f"{iscudaavailable}")
     logging.info(f"Gerät: {device}")
+
+    isquantized = True
     if isquantized:
         torch.backends.quantized.engine = "fbgemm"
 
@@ -316,7 +318,11 @@ def cmd_infer(args: argparse.Namespace) -> None:
     #print("cuDNN:", torch.backends.cudnn.version())
     #print("CUDA available:", torch.cuda.is_available())
 
-    ts_path = model_dir / f"{model_name}_ts.pt"
+    ############################# ändern V
+    ts_path = Path("/home/marceldavis/University/BA/FirstZoo/opt/models/mobilenet_v2_static/image50.pt").expanduser().resolve()
+
+    #mobilenet_v2_static/image1000.pt
+    #mobilenet_v2/mobilenet_v2_ts.pt
     sd_path = model_dir / f"{model_name}_state_dict.pt"
 
     if ts_path.exists() and not args.force_state_dict:

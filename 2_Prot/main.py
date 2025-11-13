@@ -6,13 +6,22 @@ from mobilenetv2 import cmd_download
 from mobilenetv2 import static_download
 
 
+
 """
     Recommendation System for Edge Devices.
     This system filters models based on user preferences and hardware specifications
     and provides the best model recommendation based on given priorities.
 
-    Example Usage:
+    Example Usage for recommendation:
     python main.py recom --input input.json
+
+    Example Usage for dowload of mobilenetv2 static quantization:
+
+    python main.py download --modeldir ../opt/models/mobilenet_v2_static --static True
+
+    ###
+    # conda activate mobilemlzoo
+    ###
 
 """
 
@@ -216,7 +225,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_dl.set_defaults(func=recomStart)
 
     p_inf = sub.add_parser("download", help="")
-    p_inf.add_argument("--model", type=str, required=True, help="")
+    # for now required = False because there is only one model
+    p_inf.add_argument("--model", type=str, required=False, help="")
     p_inf.add_argument("--modeldir", type=str, required=True, help="")
     p_inf.add_argument("--static", type=bool, default=False, help="")
     p_inf.add_argument("--dynamic",type=bool,default=False, help="")

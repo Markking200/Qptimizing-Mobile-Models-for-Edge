@@ -42,6 +42,7 @@ from torch.ao.quantization import get_default_qconfig
 #from torch.ao.quantization.fx import prepare_fx, convert_fx
 from torch.quantization import quantize_fx
 import os, platform
+from datasets import load_dataset
 
 # Jeder Eintrag: sichtbarer Name -> (ctor, weights_enum_attr)
 # Die weights-Enums heißen in neueren torchvision-Versionen z.B. MobileNet_V3_Small_Weights
@@ -198,17 +199,22 @@ def static_download(path: str) -> None:
         return preprocess(img).unsqueeze(0)  # (1,3,224,224)
     
     #calib_dir = Path("/home/University/BA/archive\(1\)//allimages")
-    calib_dir = Path(os.path.abspath("../data/allimages"))  # lege dort 50–200 Bilder ab (beliebige natürliche Fotos)
-    print(calib_dir)
+    calib_dir = Path(os.path.abspath("../data/calibration"))  # lege dort 50–200 Bilder ab (beliebige natürliche Fotos)
+    #print(calib_dir)
     #print(list(calib_dir.glob("*.jpg")))
+    #dataset = load_dataset("imagenet-1k",split="validation")
+    calibration_dataset = list(calib_dir.glob("*.jpg"))
     try:
         with torch.inference_mode():
                 #for i in range(200):
                 imageindex = 0
-                for fname in list(calib_dir.glob("*.jpg"))[:6500]:
+                #for fname in list(calib_dir.glob("*.jpg"))[:6500]:
+                for i in range(100):
+                    #y = random.randint(0,49999)
                     #torch.rand(1,3,224, 224)
                     #print(fname)
-                    x = load_and_preprocess(fname)
+                    x = load_and_preprocess(calibration_dataset[i])
+                    #x = dataset[y]['image']
                     prepared(x)  # nur forward, keine Labels nötig
     except Exception as e:
         print(e)
@@ -339,7 +345,7 @@ def cmd_infer(args: argparse.Namespace) -> None:
 
     x = load_image(img_path, preprocess).to(device)
 
-    print("Checkpoint")
+    #print("Checkpoint")
 
     with torch.no_grad():
         logits = model(x)
