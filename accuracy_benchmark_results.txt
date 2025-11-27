@@ -1,0 +1,29 @@
+mobilenetv2 static int8 200images
+
+================= Results =================
+Samples evaluated : 20000
+Top-1 Accuracy    : 60.5600%
+Top-5 Accuracy    : 83.0600%
+Total time (s)    : 495.5
+Throughput (img/s): 40.4
+===========================================
+
+mobilenetv2 normal
+
+================= Results =================
+Samples evaluated : 4000
+Top-1 Accuracy    : 71.9750%
+Top-5 Accuracy    : 89.5750%
+Total time (s)    : 175.2
+Throughput (img/s): 22.8
+===========================================
+
+mobilenetv2 qat epochs 2 100 batches per epoch
+
+================= Results =================
+Samples evaluated : 4000
+Top-1 Accuracy    : 68.6750%
+Top-5 Accuracy    : 87.9000%
+Total time (s)    : 139.3
+Throughput (img/s): 28.7
+===========================================

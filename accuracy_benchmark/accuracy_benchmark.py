@@ -15,9 +15,9 @@ from tqdm import tqdm
 from PIL import Image
 
 # -------- Config --------
-MODEL_PATH = "../opt/models/mobilenet_v2_static/image200.pt"   # dein TorchScript-INT8-Modell
+MODEL_PATH = "../opt/models/mobilenet_v2_static/image500.pt"   # dein TorchScript-INT8-Modell
 BATCH_SIZE = 64                              # CPU-geeignet; an deine Maschine anpassen
-NUM_WORKERS = 4                              # DataLoader-Worker (0 auf Windows)
+NUM_WORKERS = 100                              # DataLoader-Worker (0 auf Windows)
 PIN_MEMORY = False                           # CPU-Only -> False
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD  = [0.229, 0.224, 0.225]
@@ -25,9 +25,10 @@ RESIZE_SHORTER = 256
 CROP_SIZE = 224
 SPLIT = "validation"                         # 50k val
 SUBSET = None                                # z.B. "validation[:5000]" für schnellen Test
-MAX_SAMPLES = 5000                        # z.B. 1000 für schnellen Test (überschreibt SUBSET)
+MAX_SAMPLES = 500                        # number of samples to eval (total will be MAX_SAMPLES * NUM_WORKERS if NUM_WORKERS>0)
 
 
+# currently for streaming = True => IterableDataset, if dataset is downloaded HFImageNetDataset can inherit from Dataset
 class HFImageNetDataset(IterableDataset):
     """
     Wrappt ein HuggingFace-ImageNet-Split und appliziert torchvision-Preprocessing.
@@ -85,6 +86,7 @@ def main():
     # 1) Modell laden (TorchScript INT8 -> CPU)
     print(f"[INFO] Loading TorchScript model from: {MODEL_PATH}")
     model = torch.jit.load(MODEL_PATH, map_location="cpu")
+    #activates inference mode, forecast gets deterministic, 
     model.eval()
     print("[INFO] Model loaded. Running on CPU (INT8).")
 
@@ -114,8 +116,13 @@ def main():
     top1_correct = 0
     top5_correct = 0
 
+    #zw1 = None
+    #zw2 = None
+    #zw3 = None
+
     t0 = time()
     with torch.inference_mode():
+        #tqdm shows progress bar with iterations per second
         for x, y in tqdm(loader, desc="Evaluating"):#, total=math.ceil(n_samples / BATCH_SIZE)):
             # Modell ist CPU/INT8; keine .to('cuda') hier!
             logits = model(x)               # (B, 1000)
@@ -126,6 +133,14 @@ def main():
             top5_correct += topk_correct(logits, y, k=5)
             total += y.size(0)
             print(f"\r[INFO] Processed {total} samples...", end="", flush=True)
+            
+            #zw1 = logits
+            #zw2 = x
+            #zw3 = y
+            #break
+    #print(zw1)
+    #print(zw2)
+    #print(zw3)
 
     dt = time() - t0
     top1 = top1_correct / total
@@ -138,6 +153,25 @@ def main():
     print(f"Total time (s)    : {dt:.1f}")
     print(f"Throughput (img/s): {total / dt:.1f}")
     print("===========================================\n")
+
+    log_path = "accuracy_benchmark_results.txt"
+
+    line = (
+        "\n================= Results =================\n"
+        f"Model: {MODEL_PATH}\n"
+        f"Samples: {total}, \n"
+        f"Top-1: {top1:.4%}, \n"
+        f"Top-5: {top5:.4%}, \n"
+        f"Time: {dt:.1f}s, \n"
+        f"Throughput: {total/dt:.1f} img/s\n"
+        "===========================================\n"
+    )
+
+    # 'a' = append (anhängen) → erstellt die Datei, falls sie noch nicht existiert
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(line)
+
+    print(f"[INFO] Results appended to {log_path}")
 
 
 if __name__ == "__main__":

@@ -6,3 +6,5 @@ src/models
 src/opt
 notebooks
 scripts
+2_Prot/__pycache__
+3_prot/__pycache__
