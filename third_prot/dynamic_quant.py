@@ -111,20 +111,20 @@ def ensure_fp32_files(modelregistry, model_name: str, out_dir: Path, force_downl
         logging.info("FP32 state_dict und metadata.json vorhanden – kein Download nötig.")
         return sd_path, meta_path
 
-    logging.info("Lade FP32-Gewichte von torchvision …")
-    ctor, weights_path = modelregistry[model_name]
+    logging.info("Loading FP-32 Weight from torchvision …")
+    ctor, weights_path,_,_ = modelregistry[model_name]
     weights = resolve_weights(weights_path)
     model = ctor(weights=weights)
     model.eval()
 
     # state_dict speichern
     torch.save(model.state_dict(), sd_path)
-    logging.info(f"Gespeichert: {sd_path}")
+    logging.info(f"Saved: {sd_path}")
 
     # Preprocess/Labels extrahieren und Metadata schreiben (ohne quantization)
     preprocess = extract_preprocess_from_weights(weights)
     save_metadata(out_dir, model_name, weights_path, preprocess, quant={"type": "none"})
-    logging.info(f"Gespeichert: {meta_path}")
+    logging.info(f"Saved: {meta_path}")
 
     return sd_path, meta_path
 
@@ -142,9 +142,12 @@ def dynamic_quantize(ctx: Context) -> Path:
     mod_reg = ctx.MODEL_REGISTRY
     logger = ctx.logger
 
+    if path is None:
+        path = "../modelzoo"
+
     out_dir = Path(path).expanduser().resolve()
     #out_dir = Path("../opt/models/mobilenet_v2_static").expanduser().resolve()
-    out_dir = out_dir / model_name
+    out_dir = out_dir / f"{model_name}_dynamic"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     backend = platform.machine().lower()
@@ -154,11 +157,12 @@ def dynamic_quantize(ctx: Context) -> Path:
     logging.info(f"Quantization engine: {engine}")
 
     # 1) FP32 state_dict sicherstellen/laden
-    sd_path, meta_path = ensure_fp32_files(model_name, out_dir, force_download=False, modelregistry=mod_reg)
+    sd_path, meta_path = ensure_fp32_files(mod_reg, model_name, out_dir, force_download=False)
 
     # 2) Architektur + Gewichte laden
     ctor, weights_path,_,_  = mod_reg[model_name]
     weights = resolve_weights(weights_path)
+    categories=weights.meta.get("categories", [])
     model = ctor(weights=None)
     model.load_state_dict(torch.load(sd_path, map_location="cpu", weights_only=True))
     model.eval()
@@ -186,15 +190,48 @@ def dynamic_quantize(ctx: Context) -> Path:
     logging.info(f"Quantized TorchScript saved: {ts_path}")
 
     # 5) Metadata aktualisieren (quantization block)
-    meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    meta["quantization"] = {
-        "type": "dynamic",
-        "dtype": "qint8",
-        "layers": "Linear",
-        "engine": engine,
-        "artifact": ts_path.name,
+
+    meta = {
+        "architecture": model_name+"_dynamic_int8",           
+        "source": "torchvision",
+        "weights": weights_path,
+        "image_size": trace_size,
+        "resize_shorter_side": 256,
+        "center_crop": 224,
+        "normalize_mean": [
+                                0.485,
+                                0.456,
+                                0.406
+                            ],
+        "normalize_std": [
+                            0.229,
+                            0.224,
+                            0.225
+                        ],
+        "categories": categories,
+        "framework": {
+            "torch": torch.__version__,
+            "torchvision": getattr(models, "__version__", "unknown"),
+        },
+        "quantization": {
+            "type": "dynamic",
+            "dtype": "int8",
+            "layers": "all",
+            "engine": torch.backends.quantized.engine,
+            "artifact": "torchscript",
+        }
     }
-    meta["image_size"] = trace_size  # falls trace_size != center_crop
+    (out_dir / "metadata.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
+    # meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    # meta["quantization"] = {
+    #     "type": "dynamic",
+    #     "dtype": "qint8",
+    #     "layers": "Linear",
+    #     "engine": engine,
+    #     "artifact": ts_path.name,
+    # }
+    # meta["image_size"] = trace_size  # falls trace_size != center_crop
     meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
     logging.info(f"Metadata aktualisiert: {meta_path}")
 

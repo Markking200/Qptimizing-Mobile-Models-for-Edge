@@ -11,7 +11,7 @@ This script:
 """
 
 import platform
-from pyparsing import Path
+from pathlib import Path
 import torch
 from torch import nn, optim
 from torchvision import models, transforms
@@ -24,6 +24,8 @@ from PIL import Image
 import random
 import os
 import pathlib
+import json
+from datasets import load_dataset, Image as HFImage
 
 # ---------------------------
 # CONFIGURATION
@@ -34,7 +36,7 @@ lr = 1e-4
 batch_size = 32
 max_batches_per_epoch = 100  # limit batches for quick demo
 
-save_dir = "../opt/models/mobilenet_v2_static"
+#save_dir = "../opt/models/mobilenet_v2_static"
 
 def infer_default_engine() -> str:
     # ARM/Raspberry Pi → qnnpack, x86 → fbgemm
@@ -58,9 +60,12 @@ def qat_download(ctx:object)-> None:
     mod_reg = ctx.MODEL_REGISTRY
     logger = ctx.logger
 
+    if path is None:
+        path = "../modelzoo"
+
     out_dir = Path(path).expanduser().resolve()
     #out_dir = Path("../opt/models/mobilenet_v2_static").expanduser().resolve()
-    out_dir = out_dir / model_name
+    out_dir = out_dir / f"{model_name}_qat"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if model_name not in mod_reg:
@@ -76,7 +81,9 @@ def qat_download(ctx:object)-> None:
     # ---------------------------
     ctor, weights_path,_,dataset_name = mod_reg[model_name]
     weights = resolve_weights(weights_path)
+    categories=weights.meta.get("categories", [])
     float_model = ctor(weights=weights)
+    float_model = ctor(weights=weights).to(device)
     float_model.eval()
 
       # ---------------------------
@@ -100,17 +107,39 @@ def qat_download(ctx:object)-> None:
 
     hf_id, hf_split = DATASET_MAP.get(dataset_name, (dataset_name, "validation"))
 
-    # use a small subset from the registry dataset (via HuggingFace)
-    dataset = load_dataset(
-        hf_id,
-        split=hf_split,
-        cache_dir="../data/huggingface1proz",
-        streaming=True
-    )
+     # ---------------------------
+    # DATASET (local parquet only; no HF hub)
+    # ---------------------------
+    DATASET_MAP = {
+        "ImageNet-1K": ("imagenet-1k", "validation"),
+    }
+    hf_id, hf_split = DATASET_MAP.get(dataset_name, (dataset_name, "validation"))
 
-    dataset = dataset.shuffle(seed=0, buffer_size=10_000)
+    LOCAL_HF_ROOT = Path(os.path.abspath("../data/hf_try1"))  # <- Ordner, wo "hf download" hinlädt
+    # erwartet: ../data/imagenet1k_hf/data/validation-00000-of-00014.parquet ...
+    parquet_dir = LOCAL_HF_ROOT / "data"
 
-    print("\n📦 Preparing DataLoader...")
+    if hf_id == "imagenet-1k" and hf_split == "validation":
+        parquet_files = sorted(str(p) for p in parquet_dir.glob("validation-*.parquet"))
+        if not parquet_files:
+            raise FileNotFoundError(
+                f"Keine validation-*.parquet gefunden in {parquet_dir}.\n"
+                f"Bitte einmalig ausführen:\n"
+                f"  hf download imagenet-1k --repo-type dataset "
+                f"--include \"data/validation-*.parquet\" --local-dir {LOCAL_HF_ROOT}"
+            )
+
+        # lокales Dataset aus Parquet laden
+        dataset = load_dataset("parquet", data_files=parquet_files, split="train")
+        # sorgt dafür, dass dataset[i]['image'] als PIL Image decodiert wird
+        dataset = dataset.cast_column("image", HFImage(decode=True))
+    else:
+        raise RuntimeError(f"Kein lokaler Parquet-Loader konfiguriert für: {hf_id} / {hf_split}")
+
+    # echtes Shuffle (kein buffer mehr nötig)
+    dataset = dataset.shuffle(seed=0)
+
+    logger.info("\n📦 Preparing DataLoader...")
 
     def collate(batch):
         imgs = []
@@ -126,25 +155,26 @@ def qat_download(ctx:object)-> None:
             labels.append(b["label"])
         return torch.stack(imgs), torch.tensor(labels)
 
-    print("✅ DataLoader ready.")
+    logger.info("✅ DataLoader ready.")
 
 
     #, shuffle=True
     loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, collate_fn=collate)
 
     #print(f"\n🚀 Loaded MobileNetV2 and prepared for QAT on {len(dataset)} samples.")
-    print("="*80)
+    logger.info("="*80)
     # ---------------------------
     # PREPARE FOR QAT
     # ---------------------------
     qconfig_dict = {"": get_default_qat_qconfig(backend)}
     example_inputs = (torch.randn(1, 3, 224, 224,device=device),)
     model_prepared = prepare_qat_fx(float_model.train(), qconfig_dict,example_inputs=example_inputs)
+    model_prepared.to(device) 
 
     optimizer = optim.Adam(model_prepared.parameters(), lr=lr)
     criterion = nn.CrossEntropyLoss()
 
-    print("\n🚀 Starting Quantization-Aware Training...")
+    logger.info("\n🚀 Starting Quantization-Aware Training...")
 
     #---------------------------
     # TRAINING LOOP
@@ -166,19 +196,54 @@ def qat_download(ctx:object)-> None:
 
             running_loss += loss.item()
             if i % 10 == 0:
-                print(f"[Epoch {epoch+1}] Batch {i} | Loss: {loss.item():.4f}")
+                logger.info(f"[Epoch {epoch+1}] Batch {i} | Loss: {loss.item():.4f}")
 
-    print("\n✅ QAT fine-tuning complete.")
+    logger.info("\n✅ QAT fine-tuning complete.")
 
     # ---------------------------
     # CONVERT & SAVE
     # ---------------------------
     model_prepared.eval()
+    model_prepared.to("cpu") 
     model_quantized = convert_fx(model_prepared)
 
     example = torch.randn(1, 3, 224, 224)
     traced = torch.jit.trace(model_quantized, example)
-    torch.jit.save(traced, os.path.join(save_dir, "mobilenet_v2_qat_int8_ts.pt"))
 
-    torch.save(model_quantized.state_dict(), os.path.join(save_dir, "mobilenet_v2_qat_int8_state.pt"))
-    print(f"💾 Saved quantized model to {save_dir}")
+    meta = {
+        "architecture": model_name+"_qat_int8",           
+        "source": "torchvision",
+        "weights": weights_path,
+        "image_size": 224,
+        "resize_shorter_side": 256,
+        "center_crop": 224,
+        "normalize_mean": [
+                                0.485,
+                                0.456,
+                                0.406
+                            ],
+        "normalize_std": [
+                            0.229,
+                            0.224,
+                            0.225
+                        ],
+        "categories": categories,
+        "framework": {
+            "torch": torch.__version__,
+            "torchvision": getattr(models, "__version__", "unknown"),
+        },
+        "quantization": {
+            "type": "qat",
+            "dtype": "int8",
+            "layers": "all",
+            "engine": torch.backends.quantized.engine,
+            "artifact": "torchscript",
+        }
+    }
+    (out_dir / "metadata.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
+
+    torch.jit.save(traced, os.path.join(out_dir, f"{model_name}_qat_int8_ts.pt"))
+
+    torch.save(model_quantized.state_dict(), os.path.join(out_dir, f"{model_name}_qat_int8_state.pt"))
+    logger.info(f"💾 Saved quantized model to {out_dir}")

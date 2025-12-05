@@ -16,13 +16,18 @@ from torch.ao.quantization import get_default_qconfig
 #from torch.ao.quantization.fx import prepare_fx, convert_fx
 from torch.quantization import quantize_fx
 import os, platform
-from datasets import load_dataset
+from datasets import load_dataset, load_from_disk
 from context import Context
 from download_model import resolve_weights
 from torch.ao.quantization import QConfigMapping
+from datasets import load_dataset
+from datasets import Image as HFImage
 
 IMAGE_POOL = 1000
 SEED = 42
+
+HF_CACHE_DIR = os.path.abspath("../data/huggingface_val")        # fürs erstmalige Download/Cache
+HF_SAVED_DIR = os.path.abspath("../data/hf_saved_datasets") # für lokal gespeicherte Datasets
 
 
 def static_download(ctx:Context) -> None:
@@ -33,18 +38,23 @@ def static_download(ctx:Context) -> None:
     mod_reg = ctx.MODEL_REGISTRY
     logger = ctx.logger
 
+
+    if path is None:
+        path = "../modelzoo"
     #Prepare for download
     out_dir = Path(path).expanduser().resolve()
     #out_dir = Path("../opt/models/mobilenet_v2_static").expanduser().resolve()
-    out_dir = out_dir / model_name
+    #logger.info(out_dir)
+    #logger.info(model_name)
+    out_dir = out_dir / f"{model_name}_static"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if model_name not in mod_reg:
-        logger.error(f"Modell {model_name} nicht in der Registry gefunden!")
+        logger.error(f"Modell {model_name} not found in registry!")
         return
 
-    logger.info(f"Starte Static Quantization (FX) für: {model_name}")
-    logger.info(f"Zielordner: {out_dir}")
+    logger.info(f"Start Static Quantization (FX) for: {model_name}")
+    logger.info(f"Saving Directory: {out_dir}")
 
     backend = platform.machine().lower()
     torch.backends.quantized.engine = "qnnpack" if ("arm" in backend or "aarch64" in backend) else "fbgemm"
@@ -62,7 +72,7 @@ def static_download(ctx:Context) -> None:
     elif hasattr(preprocess, 'resize_size'):
          image_size = preprocess.resize_size[0]
 
-    logger.info(f"Verwende Image Size: {image_size}")
+    logger.info(f"Using Image Size: {image_size}")
     
     
     qconfig = get_default_qconfig(torch.backends.quantized.engine)
@@ -91,17 +101,28 @@ def static_download(ctx:Context) -> None:
     logger.info(f"Calibration Dataset: {dataset_name} -> HF='{hf_id}' split='{hf_split}', samples={calib_images}, seed={calib_seed}")
 
     try:
-        # streaming=True ist für Calibration super (du brauchst kein len()/shuffle=True im DataLoader)
-        calib_ds = load_dataset(
-            hf_id,
-            split=hf_split,
-            streaming=True,
-            cache_dir=os.path.abspath("../data/huggingface"),
-        )
+        # >>> NEU: lokale saved version bevorzugen (offline-fähig)
+        LOCAL_HF_DATASETS = Path(os.path.abspath("../data/hf_try1"))  # <- hier liegt hf download output
+        parquet_dir = LOCAL_HF_DATASETS / "data"
 
-        # reproducible random sample (buffered shuffle)
-        # (buffer_size ruhig größer machen, wenn du willst)
-        calib_ds = calib_ds.shuffle(seed=calib_seed, buffer_size=10_000)
+        if hf_id == "imagenet-1k" and hf_split == "validation":
+            files = sorted(str(p) for p in parquet_dir.glob("validation-*.parquet"))
+            if not files:
+                raise FileNotFoundError(
+                    f"Keine validation-*.parquet gefunden in {parquet_dir}. "
+                    f"Bitte vorher ausführen:\n"
+                    f"  hf download imagenet-1k --repo-type dataset --include \"data/validation-*.parquet\" "
+                    f"--local-dir {LOCAL_HF_DATASETS}"
+                )
+
+            calib_ds = load_dataset("parquet", data_files=files, split="train")
+            # sorgt dafür, dass calib_ds[i]["image"] als PIL/Decoded Image kommt
+            calib_ds = calib_ds.cast_column("image", HFImage(decode=True))
+        else:
+            raise RuntimeError(f"Kein lokaler Loader für hf_id={hf_id} split={hf_split} konfiguriert.")
+
+        # reproducible shuffle und dann die ersten N nehmen
+        calib_ds = calib_ds.shuffle(seed=calib_seed)
 
         def to_input(example):
             img = example.get("image", None)
@@ -110,16 +131,16 @@ def static_download(ctx:Context) -> None:
             if not isinstance(img, Image.Image):
                 img = Image.fromarray(img)
             img = img.convert("RGB")
-            x = preprocess(img).unsqueeze(0)
-            return x
+            return preprocess(img).unsqueeze(0)
 
+        n = min(calib_images, len(calib_ds))
         with torch.inference_mode():
             taken = 0
-            for ex in calib_ds.take(calib_images):
+            for ex in calib_ds.select(range(n)):
                 x = to_input(ex)
                 if x is None:
                     continue
-                prepared(x)  # forward only
+                prepared(x)
                 taken += 1
 
         logger.info(f"Calibration done. Successfully used {taken} samples.")
@@ -153,8 +174,8 @@ def static_download(ctx:Context) -> None:
     example = torch.randn(1, 3, image_size, image_size)
     ts_int8 = torch.jit.trace(model_int8, example)
     ts_int8.save(str(out_dir/f"{model_name}_static_int8_ts.pt"))
-    print("Gespeichert:", f"{model_name}_static_int8_ts.pt")
-    print("Checkpoint 1")
+    logger.info("Gespeichert:", f"{model_name}_static_int8_ts.pt")
+    #print("Checkpoint 1")
     # with torch.inference_mode():
     #     y = ts_int8(torch.randn(1,3,image_size,image_size))
     # print("OK, Output-Shape:", tuple(y.shape))
@@ -181,7 +202,14 @@ def static_download(ctx:Context) -> None:
             "torch": torch.__version__,
             "torchvision": getattr(models, "__version__", "unknown"),
         },
+        "quantization": {
+            "type": "static",
+            "dtype": "int8",
+            "layers": "all",
+            "engine": torch.backends.quantized.engine,
+            "artifact": "torchscript",
+        }
     }
     (out_dir / "metadata.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
-    logging.info("Download abgeschlossen. Modell ist offline nutzbar.")
-    print("Checkpoint 2")
+    logger.info("Download abgeschlossen. Modell ist offline nutzbar.")
+    #print("Checkpoint 2")

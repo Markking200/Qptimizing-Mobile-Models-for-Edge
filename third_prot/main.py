@@ -351,32 +351,65 @@ def recomStart(ctx: Context, args: argparse.Namespace):
         counter = counter +1
 
 def inferece(ctx: Context, args: argparse.Namespace):
+    logger.info("Starting inference process...")
+    logger.info("="*80)
     cmd_infer(ctx) 
 
 def download(ctx: Context, args: argparse.Namespace):
     #download for all models
-    ctx.logger.info(f"Download requested for model: {args.model}")
-    if args.all == True:
+    #ctx.logger.info(args.all)
+    args = ctx.args
+    if args.all:
+        logger.info("Download requested for all models.")
+        logger.info("="*80)
         for model in ctx.MODEL_REGISTRY.keys():
-            args.model = model
+            logger.info(f"Download requested for model: {model}")
+            ctx.args.model = model
             if args.dynamic == True:
+                logger.info(f"Starting dynamic quantization download for model: {model}")
+                logger.info("="*50)
                 dynamic_quantize(ctx)
+                logger.info("="*50)
             if args.static == True:
+                logger.info(f"Starting static quantization download for model: {model}")
+                logger.info("="*50)
                 static_download(ctx)
+                logger.info("="*50)
             if args.qat == True:
+                logger.info(f"Starting QAT download for model: {model}")
+                logger.info("="*50)
                 qat_download(ctx)
+                logger.info("="*50)
             if args.normal == True:
+                logger.info(f"Starting normal download for model: {model}")
+                logger.info("="*50)
                 cmd_download(ctx)
+                logger.info("="*50)
 
+        return   
+        
+    ctx.logger.info(f"Download requested for model: {args.model}")
     #normal download for one model
     if args.dynamic == True:
+        logger.info("="*50)
+        logger.info(f"Starting dynamic quantization download for model: {args.model}")
         dynamic_quantize(ctx)
+        logger.info("="*50)
     if args.static == True:
+        logger.info("="*50)
+        logger.info(f"Starting static quantization download for model: {args.model}")
         static_download(ctx)
+        logger.info("="*50)
     if args.qat == True:
+        logger.info("="*50)
+        logger.info(f"Starting QAT download for model: {args.model}")
         qat_download(ctx)
+        logger.info("="*50)
     if args.normal == True:
+        logger.info("="*50)
+        logger.info(f"Starting normal download for model: {args.model}")
         cmd_download(ctx)
+        logger.info("="*50)
 
 def get_models(ctx: Context, args: argparse.Namespace):
     #wenn --model und --all gesetzt ist dann abbrechen denn es darf nur eins gesetzt sein
@@ -402,7 +435,8 @@ def setup_logging():
 
 
 def benchmark_accuracy(ctx: Context, args: argparse.Namespace):
-    print("Benchmarking accuracy...")
+    ctx.logger.info("Benchmarking accuracy...")
+    ctx.logger.info("="*80)
     accracy_benchmark(ctx)
 
 
@@ -434,8 +468,8 @@ def build_parser(ctx:Context) -> argparse.ArgumentParser:
     # -------------------- download specified model --------------------
     p_inf = sub.add_parser("download", help="")
     # for now required = False because there is only one model
-    p_inf.add_argument("--model", type=str, required=True, help="")
-    p_inf.add_argument("--modeldir", type=str, required=True, help="")
+    p_inf.add_argument("--model", type=str, required=False, help="")
+    p_inf.add_argument("--modeldir", type=str, required=False, help="")
     p_inf.add_argument("--all", type=str, required=False,default=False, help="")
 
     p_inf.add_argument("--normal", type=bool, default=False, help="")
@@ -461,6 +495,7 @@ def build_parser(ctx:Context) -> argparse.ArgumentParser:
     # ---------------------------benchmark accuracy--------------------------------------
     p_inf = sub.add_parser("accbenchmark", help="")
     p_inf.add_argument("--modeldir", type=str, required=False, help="")
+    p_inf.add_argument("--logpath", type=str, required=False, help="")
     p_inf.add_argument("--samplesize", type=int, required=False, help="")
     p_inf.add_argument("--all", type=bool, required=False,default=False, help="")
     p_inf.set_defaults(func=benchmark_accuracy)

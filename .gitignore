@@ -8,3 +8,7 @@ notebooks
 scripts
 2_Prot/__pycache__
 3_prot/__pycache__
+third_prot/__pycache__
+third_prot/accuracy_benchmark_results.txt
+third_prot/accuracy_benchmark_results_20251205_150619.txt
+accuracy_benchmark/__pycache__

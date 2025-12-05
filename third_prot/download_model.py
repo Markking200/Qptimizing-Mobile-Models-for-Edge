@@ -70,6 +70,9 @@ def cmd_download(ctx:Context) -> None:
     mod_reg = ctx.MODEL_REGISTRY
     logger = ctx.logger
 
+    if path is None:
+        path = "../modelzoo"
+
     model_name: str = args.model # default
     out_dir = Path(path).expanduser().resolve()
     out_dir = out_dir / model_name
@@ -149,6 +152,13 @@ def cmd_download(ctx:Context) -> None:
             "torch": torch.__version__,
             "torchvision": getattr(models, "__version__", "unknown"),
         },
+        "quantization": {
+            "type": "None",
+            "dtype": "",
+            "layers": "",
+            "engine": "",
+            "artifact": "",
+    }
     }
     (out_dir / "metadata.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     logger.info("Model succesfully downloaded. Ready for offline use.")
