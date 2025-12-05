@@ -10,6 +10,8 @@ This script:
 4. Converts and saves the quantized model
 """
 
+import platform
+from pyparsing import Path
 import torch
 from torch import nn, optim
 from torchvision import models, transforms
@@ -21,6 +23,7 @@ from datasets import load_dataset
 from PIL import Image
 import random
 import os
+import pathlib
 
 # ---------------------------
 # CONFIGURATION
@@ -29,23 +32,54 @@ backend = "fbgemm"    # for x86 CPUs
 epochs = 2            # short fine-tuning
 lr = 1e-4
 batch_size = 32
+max_batches_per_epoch = 100  # limit batches for quick demo
 
 save_dir = "../opt/models/mobilenet_v2_static"
 
-def qat_download(ctx:object)-> None:
-    
-    os.makedirs(save_dir, exist_ok=True)
+def infer_default_engine() -> str:
+    # ARM/Raspberry Pi → qnnpack, x86 → fbgemm
+    arch = platform.machine().lower()
+    if "arm" in arch or "aarch64" in arch:
+        return "qnnpack"
+    return "fbgemm"
 
-    device = torch.device("cpu") #"cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Device: {device}")
+def resolve_weights(weights_enum_path: str):
+    enum_name, member = weights_enum_path.split(".", 1)
+    enum_obj = getattr(models, enum_name, None)
+    if enum_obj is None:
+        raise ValueError(f"Weights enum '{enum_name}' not found in torchvision.models")
+    return getattr(enum_obj, member)
+
+def qat_download(ctx:object)-> None:
+
+    args = ctx.args
+    model_name = args.model
+    path = args.modeldir
+    mod_reg = ctx.MODEL_REGISTRY
+    logger = ctx.logger
+
+    out_dir = Path(path).expanduser().resolve()
+    #out_dir = Path("../opt/models/mobilenet_v2_static").expanduser().resolve()
+    out_dir = out_dir / model_name
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    if model_name not in mod_reg:
+        raise ValueError(f"Unknown model '{model_name}'. Supporting only: {', '.join(mod_reg)}")
+    
+    #os.makedirs(save_dir, exist_ok=True)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    logger.info(f"Device: {device}")
 
     # ---------------------------
     # LOAD MODEL
     # ---------------------------
-    float_model = models.mobilenet_v2(weights="IMAGENET1K_V1")
+    ctor, weights_path,_,dataset_name = mod_reg[model_name]
+    weights = resolve_weights(weights_path)
+    float_model = ctor(weights=weights)
     float_model.eval()
 
-    # ---------------------------
+      # ---------------------------
     # TRANSFORMS & DATASET
     # ---------------------------
     transform = transforms.Compose([
@@ -56,8 +90,25 @@ def qat_download(ctx:object)-> None:
                             std=[0.229, 0.224, 0.225]),
     ])
 
-    # use a small subset from ImageNet-1k validation (via HuggingFace)
-    dataset = load_dataset("imagenet-1k", split="validation",cache_dir="../data/huggingface1proz", streaming=True)
+    # Dataset aus Registry verwenden
+    DATASET_MAP = {
+        "ImageNet-1K": ("imagenet-1k", "validation"),
+        # hier kannst du später mehr Aliases hinzufügen:
+        # "Food101": ("food101", "validation"),
+        # "CIFAR-10": ("cifar10", "test"),  # HF split heißt je nach dataset anders
+    }
+
+    hf_id, hf_split = DATASET_MAP.get(dataset_name, (dataset_name, "validation"))
+
+    # use a small subset from the registry dataset (via HuggingFace)
+    dataset = load_dataset(
+        hf_id,
+        split=hf_split,
+        cache_dir="../data/huggingface1proz",
+        streaming=True
+    )
+
+    dataset = dataset.shuffle(seed=0, buffer_size=10_000)
 
     print("\n📦 Preparing DataLoader...")
 
@@ -95,7 +146,9 @@ def qat_download(ctx:object)-> None:
 
     print("\n🚀 Starting Quantization-Aware Training...")
 
-    max_batches_per_epoch = 100  # limit batches for quick demo
+    #---------------------------
+    # TRAINING LOOP
+    #---------------------------
 
     for epoch in range(epochs):
         running_loss = 0.0

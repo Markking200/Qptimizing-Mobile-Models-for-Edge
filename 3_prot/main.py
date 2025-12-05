@@ -33,7 +33,7 @@ from torchvision import models, transforms
 
     Example Usage for dowload of mobilenetv2 static quantization:
 
-    python main.py download --modeldir ../opt/models/mobilenet_v2_static --static True
+    python main.py download --model mobilenet_v2 --modeldir ../opt/models --static True
 
     ###
     # conda activate mobilemlzoo
@@ -41,17 +41,143 @@ from torchvision import models, transforms
 
 """
 
-MODEL_REGISTRY: Dict[str, Tuple[Callable[..., torch.nn.Module], str]] = {
-    "mobilenet_v2":        (models.mobilenet_v2,       "MobileNet_V2_Weights.IMAGENET1K_V1"),
-    "mobilenet_v3_small":  (models.mobilenet_v3_small, "MobileNet_V3_Small_Weights.IMAGENET1K_V1"),
-    "mobilenet_v3_large":  (models.mobilenet_v3_large, "MobileNet_V3_Large_Weights.IMAGENET1K_V1"),
-    "shufflenet_v2_x0_5":  (models.shufflenet_v2_x0_5, "ShuffleNet_V2_X0_5_Weights.IMAGENET1K_V1"),
-    "shufflenet_v2_x1_0":  (models.shufflenet_v2_x1_0, "ShuffleNet_V2_X1_0_Weights.IMAGENET1K_V1"),
-    "mnasnet0_5":          (models.mnasnet0_5,         "MNASNet0_5_Weights.IMAGENET1K_V1"),
-    "mnasnet1_0":          (models.mnasnet1_0,         "MNASNet1_0_Weights.IMAGENET1K_V1"),
-    "squeezenet1_0":       (models.squeezenet1_0,      "SqueezeNet1_0_Weights.IMAGENET1K_V1"),
-    "efficientnet_b0":     (models.efficientnet_b0,    "EfficientNet_B0_Weights.IMAGENET1K_V1"),
+
+TASK_CLASSIFICATION = "classification"
+DS_IMAGENET1K = "ImageNet-1K"
+DS_IMAGENET1K_SWAG = "ImageNet-1K (SWAG pretrain)"
+
+MODEL_REGISTRY: Dict[str, Tuple[Callable[..., torch.nn.Module], str, str, str]] = {
+    # AlexNet
+    "alexnet": (models.alexnet, "AlexNet_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+
+    # ConvNeXt
+    "convnext_tiny":  (models.convnext_tiny,  "ConvNeXt_Tiny_Weights.IMAGENET1K_V1",  TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "convnext_small": (models.convnext_small, "ConvNeXt_Small_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "convnext_base":  (models.convnext_base,  "ConvNeXt_Base_Weights.IMAGENET1K_V1",  TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "convnext_large": (models.convnext_large, "ConvNeXt_Large_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+
+    # DenseNet
+    "densenet121": (models.densenet121, "DenseNet121_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "densenet161": (models.densenet161, "DenseNet161_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "densenet169": (models.densenet169, "DenseNet169_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "densenet201": (models.densenet201, "DenseNet201_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+
+    # EfficientNet
+    "efficientnet_b0": (models.efficientnet_b0, "EfficientNet_B0_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "efficientnet_b1": (models.efficientnet_b1, "EfficientNet_B1_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "efficientnet_b2": (models.efficientnet_b2, "EfficientNet_B2_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "efficientnet_b3": (models.efficientnet_b3, "EfficientNet_B3_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "efficientnet_b4": (models.efficientnet_b4, "EfficientNet_B4_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "efficientnet_b5": (models.efficientnet_b5, "EfficientNet_B5_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "efficientnet_b6": (models.efficientnet_b6, "EfficientNet_B6_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "efficientnet_b7": (models.efficientnet_b7, "EfficientNet_B7_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+
+    # EfficientNetV2
+    "efficientnet_v2_s": (models.efficientnet_v2_s, "EfficientNet_V2_S_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "efficientnet_v2_m": (models.efficientnet_v2_m, "EfficientNet_V2_M_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "efficientnet_v2_l": (models.efficientnet_v2_l, "EfficientNet_V2_L_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+
+    # GoogLeNet / InceptionV3
+    "googlenet":   (models.googlenet,   "GoogLeNet_Weights.IMAGENET1K_V1",   TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "inception_v3": (models.inception_v3, "Inception_V3_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+
+    # MaxVit
+    "maxvit_t": (models.maxvit_t, "MaxVit_T_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+
+    # MNASNet
+    "mnasnet0_5":  (models.mnasnet0_5,  "MNASNet0_5_Weights.IMAGENET1K_V1",  TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "mnasnet0_75": (models.mnasnet0_75, "MNASNet0_75_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "mnasnet1_0":  (models.mnasnet1_0,  "MNASNet1_0_Weights.IMAGENET1K_V1",  TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "mnasnet1_3":  (models.mnasnet1_3,  "MNASNet1_3_Weights.IMAGENET1K_V1",  TASK_CLASSIFICATION, DS_IMAGENET1K),
+
+    # MobileNetV2 / V3
+    "mobilenet_v2":       (models.mobilenet_v2,       "MobileNet_V2_Weights.IMAGENET1K_V1",       TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "mobilenet_v3_small": (models.mobilenet_v3_small, "MobileNet_V3_Small_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "mobilenet_v3_large": (models.mobilenet_v3_large, "MobileNet_V3_Large_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+
+    # RegNet
+    "regnet_x_400mf": (models.regnet_x_400mf, "RegNet_X_400MF_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "regnet_x_800mf": (models.regnet_x_800mf, "RegNet_X_800MF_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "regnet_x_1_6gf": (models.regnet_x_1_6gf, "RegNet_X_1_6GF_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "regnet_x_3_2gf": (models.regnet_x_3_2gf, "RegNet_X_3_2GF_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "regnet_x_8gf":   (models.regnet_x_8gf,   "RegNet_X_8GF_Weights.IMAGENET1K_V1",   TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "regnet_x_16gf":  (models.regnet_x_16gf,  "RegNet_X_16GF_Weights.IMAGENET1K_V1",  TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "regnet_x_32gf":  (models.regnet_x_32gf,  "RegNet_X_32GF_Weights.IMAGENET1K_V1",  TASK_CLASSIFICATION, DS_IMAGENET1K),
+
+    "regnet_y_400mf": (models.regnet_y_400mf, "RegNet_Y_400MF_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "regnet_y_800mf": (models.regnet_y_800mf, "RegNet_Y_800MF_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "regnet_y_1_6gf": (models.regnet_y_1_6gf, "RegNet_Y_1_6GF_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "regnet_y_3_2gf": (models.regnet_y_3_2gf, "RegNet_Y_3_2GF_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "regnet_y_8gf":   (models.regnet_y_8gf,   "RegNet_Y_8GF_Weights.IMAGENET1K_V1",   TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "regnet_y_16gf":  (models.regnet_y_16gf,  "RegNet_Y_16GF_Weights.IMAGENET1K_V1",  TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "regnet_y_32gf":  (models.regnet_y_32gf,  "RegNet_Y_32GF_Weights.IMAGENET1K_V1",  TASK_CLASSIFICATION, DS_IMAGENET1K),
+
+    # Special case: SWAG -> ImageNet-1K fine-tune
+    "regnet_y_128gf": (models.regnet_y_128gf, "RegNet_Y_128GF_Weights.IMAGENET1K_SWAG_E2E_V1", TASK_CLASSIFICATION, DS_IMAGENET1K_SWAG),
+
+    # ResNet
+    "resnet18":  (models.resnet18,  "ResNet18_Weights.IMAGENET1K_V1",  TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "resnet34":  (models.resnet34,  "ResNet34_Weights.IMAGENET1K_V1",  TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "resnet50":  (models.resnet50,  "ResNet50_Weights.IMAGENET1K_V1",  TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "resnet101": (models.resnet101, "ResNet101_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "resnet152": (models.resnet152, "ResNet152_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+
+    # ResNeXt
+    "resnext50_32x4d":  (models.resnext50_32x4d,  "ResNeXt50_32X4D_Weights.IMAGENET1K_V1",  TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "resnext101_32x8d": (models.resnext101_32x8d, "ResNeXt101_32X8D_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "resnext101_64x4d": (models.resnext101_64x4d, "ResNeXt101_64X4D_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+
+    # ShuffleNetV2
+    "shufflenet_v2_x0_5": (models.shufflenet_v2_x0_5, "ShuffleNet_V2_X0_5_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "shufflenet_v2_x1_0": (models.shufflenet_v2_x1_0, "ShuffleNet_V2_X1_0_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "shufflenet_v2_x1_5": (models.shufflenet_v2_x1_5, "ShuffleNet_V2_X1_5_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "shufflenet_v2_x2_0": (models.shufflenet_v2_x2_0, "ShuffleNet_V2_X2_0_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+
+    # SqueezeNet
+    "squeezenet1_0": (models.squeezenet1_0, "SqueezeNet1_0_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "squeezenet1_1": (models.squeezenet1_1, "SqueezeNet1_1_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+
+    # Swin Transformer (v1 + v2)
+    "swin_t":    (models.swin_t,    "Swin_T_Weights.IMAGENET1K_V1",    TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "swin_s":    (models.swin_s,    "Swin_S_Weights.IMAGENET1K_V1",    TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "swin_b":    (models.swin_b,    "Swin_B_Weights.IMAGENET1K_V1",    TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "swin_v2_t": (models.swin_v2_t, "Swin_V2_T_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "swin_v2_s": (models.swin_v2_s, "Swin_V2_S_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "swin_v2_b": (models.swin_v2_b, "Swin_V2_B_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+
+    # VGG
+    "vgg11":    (models.vgg11,    "VGG11_Weights.IMAGENET1K_V1",    TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "vgg11_bn": (models.vgg11_bn, "VGG11_BN_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "vgg13":    (models.vgg13,    "VGG13_Weights.IMAGENET1K_V1",    TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "vgg13_bn": (models.vgg13_bn, "VGG13_BN_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "vgg16":    (models.vgg16,    "VGG16_Weights.IMAGENET1K_V1",    TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "vgg16_bn": (models.vgg16_bn, "VGG16_BN_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "vgg19":    (models.vgg19,    "VGG19_Weights.IMAGENET1K_V1",    TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "vgg19_bn": (models.vgg19_bn, "VGG19_BN_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+
+    # VisionTransformer (ViT)
+    "vit_b_16": (models.vit_b_16, "ViT_B_16_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "vit_b_32": (models.vit_b_32, "ViT_B_32_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "vit_l_16": (models.vit_l_16, "ViT_L_16_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "vit_l_32": (models.vit_l_32, "ViT_L_32_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "vit_h_14": (models.vit_h_14, "ViT_H_14_Weights.IMAGENET1K_SWAG_E2E_V1", TASK_CLASSIFICATION, DS_IMAGENET1K_SWAG),
+
+    # Wide ResNet
+    "wide_resnet50_2":  (models.wide_resnet50_2,  "Wide_ResNet50_2_Weights.IMAGENET1K_V1",  TASK_CLASSIFICATION, DS_IMAGENET1K),
+    "wide_resnet101_2": (models.wide_resnet101_2, "Wide_ResNet101_2_Weights.IMAGENET1K_V1", TASK_CLASSIFICATION, DS_IMAGENET1K),
 }
+
+# MODEL_REGISTRY: Dict[str, Tuple[Callable[..., torch.nn.Module], str]] = {
+#     "mobilenet_v2":        (models.mobilenet_v2,       "MobileNet_V2_Weights.IMAGENET1K_V1", "classification","ImageNet-1K"),
+#     "mobilenet_v3_small":  (models.mobilenet_v3_small, "MobileNet_V3_Small_Weights.IMAGENET1K_V1"),
+#     "mobilenet_v3_large":  (models.mobilenet_v3_large, "MobileNet_V3_Large_Weights.IMAGENET1K_V1"),
+#     "shufflenet_v2_x0_5":  (models.shufflenet_v2_x0_5, "ShuffleNet_V2_X0_5_Weights.IMAGENET1K_V1"),
+#     "shufflenet_v2_x1_0":  (models.shufflenet_v2_x1_0, "ShuffleNet_V2_X1_0_Weights.IMAGENET1K_V1"),
+#     "mnasnet0_5":          (models.mnasnet0_5,         "MNASNet0_5_Weights.IMAGENET1K_V1"),
+#     "mnasnet1_0":          (models.mnasnet1_0,         "MNASNet1_0_Weights.IMAGENET1K_V1"),
+#     "squeezenet1_0":       (models.squeezenet1_0,      "SqueezeNet1_0_Weights.IMAGENET1K_V1"),
+#     "efficientnet_b0":     (models.efficientnet_b0,    "EfficientNet_B0_Weights.IMAGENET1K_V1"),
+# }
 
 
 def recomStart(ctx: Context, args: argparse.Namespace):
@@ -223,10 +349,10 @@ def inferece(ctx: Context, args: argparse.Namespace):
 
 def download(ctx: Context, args: argparse.Namespace):
     #download for all models
+    ctx.logger.info(f"Download requested for model: {args.model}")
     if args.all == True:
         for model in ctx.MODEL_REGISTRY.keys():
             args.model = model
-            print(f"Downloading model: {model}")
             if args.dynamic == True:
                 dynamic_quantize(ctx)
             if args.static == True:

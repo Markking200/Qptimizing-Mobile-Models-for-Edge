@@ -2,10 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Dynamic Quantization CLI for torchvision classification models.
 
-Beispiel:
-  python dynamic_quantization.py --model mobilenet_v2 --out-dir ./opt/models/mnetv2_dyn
 """
 
 from __future__ import annotations
@@ -23,26 +20,17 @@ from download_model import resolve_weights
 
 # ---------------- Registry ----------------
 # Sichtbarer Modellname -> (ctor, weights_enum_path)
-MODEL_REGISTRY: Dict[str, Tuple[Callable[..., torch.nn.Module], str]] = {
-    "mobilenet_v2":        (models.mobilenet_v2,       "MobileNet_V2_Weights.IMAGENET1K_V1"),
-    "mobilenet_v3_small":  (models.mobilenet_v3_small, "MobileNet_V3_Small_Weights.IMAGENET1K_V1"),
-    "mobilenet_v3_large":  (models.mobilenet_v3_large, "MobileNet_V3_Large_Weights.IMAGENET1K_V1"),
-    "shufflenet_v2_x0_5":  (models.shufflenet_v2_x0_5, "ShuffleNet_V2_X0_5_Weights.IMAGENET1K_V1"),
-    "shufflenet_v2_x1_0":  (models.shufflenet_v2_x1_0, "ShuffleNet_V2_X1_0_Weights.IMAGENET1K_V1"),
-    "mnasnet0_5":          (models.mnasnet0_5,         "MNASNet0_5_Weights.IMAGENET1K_V1"),
-    "mnasnet1_0":          (models.mnasnet1_0,         "MNASNet1_0_Weights.IMAGENET1K_V1"),
-    "squeezenet1_0":       (models.squeezenet1_0,      "SqueezeNet1_0_Weights.IMAGENET1K_V1"),
-    "efficientnet_b0":     (models.efficientnet_b0,    "EfficientNet_B0_Weights.IMAGENET1K_V1"),
-}
-
-# -------------- Logging --------------
-def setup_logging(verbosity: int) -> None:
-    level = logging.WARNING
-    if verbosity == 1:
-        level = logging.INFO
-    elif verbosity >= 2:
-        level = logging.DEBUG
-    logging.basicConfig(format="%(asctime)s | %(levelname)s | %(message)s", level=level)
+# MODEL_REGISTRY: Dict[str, Tuple[Callable[..., torch.nn.Module], str]] = {
+#     "mobilenet_v2":        (models.mobilenet_v2,       "MobileNet_V2_Weights.IMAGENET1K_V1"),
+#     "mobilenet_v3_small":  (models.mobilenet_v3_small, "MobileNet_V3_Small_Weights.IMAGENET1K_V1"),
+#     "mobilenet_v3_large":  (models.mobilenet_v3_large, "MobileNet_V3_Large_Weights.IMAGENET1K_V1"),
+#     "shufflenet_v2_x0_5":  (models.shufflenet_v2_x0_5, "ShuffleNet_V2_X0_5_Weights.IMAGENET1K_V1"),
+#     "shufflenet_v2_x1_0":  (models.shufflenet_v2_x1_0, "ShuffleNet_V2_X1_0_Weights.IMAGENET1K_V1"),
+#     "mnasnet0_5":          (models.mnasnet0_5,         "MNASNet0_5_Weights.IMAGENET1K_V1"),
+#     "mnasnet1_0":          (models.mnasnet1_0,         "MNASNet1_0_Weights.IMAGENET1K_V1"),
+#     "squeezenet1_0":       (models.squeezenet1_0,      "SqueezeNet1_0_Weights.IMAGENET1K_V1"),
+#     "efficientnet_b0":     (models.efficientnet_b0,    "EfficientNet_B0_Weights.IMAGENET1K_V1"),
+# }
 
 # -------------- Helpers --------------
 def resolve_weights(weights_enum_path: str):
@@ -110,7 +98,7 @@ def save_metadata(out_dir: Path, model_name: str, weights_path: str, preprocess:
     }
     (out_dir / "metadata.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
-def ensure_fp32_files(model_name: str, out_dir: Path, force_download: bool = False) -> Tuple[Path, Path]:
+def ensure_fp32_files(modelregistry, model_name: str, out_dir: Path, force_download: bool = False) -> Tuple[Path, Path]:
     """
     Stellt sicher, dass FP32 state_dict + metadata vorhanden sind.
     Lädt sie ggf. herunter.
@@ -124,7 +112,7 @@ def ensure_fp32_files(model_name: str, out_dir: Path, force_download: bool = Fal
         return sd_path, meta_path
 
     logging.info("Lade FP32-Gewichte von torchvision …")
-    ctor, weights_path = MODEL_REGISTRY[model_name]
+    ctor, weights_path = modelregistry[model_name]
     weights = resolve_weights(weights_path)
     model = ctor(weights=weights)
     model.eval()
@@ -166,10 +154,10 @@ def dynamic_quantize(ctx: Context) -> Path:
     logging.info(f"Quantization engine: {engine}")
 
     # 1) FP32 state_dict sicherstellen/laden
-    sd_path, meta_path = ensure_fp32_files(model_name, out_dir, force_download=False)
+    sd_path, meta_path = ensure_fp32_files(model_name, out_dir, force_download=False, modelregistry=mod_reg)
 
     # 2) Architektur + Gewichte laden
-    ctor, weights_path = mod_reg[model_name]
+    ctor, weights_path,_,_  = mod_reg[model_name]
     weights = resolve_weights(weights_path)
     model = ctor(weights=None)
     model.load_state_dict(torch.load(sd_path, map_location="cpu", weights_only=True))
@@ -212,62 +200,3 @@ def dynamic_quantize(ctx: Context) -> Path:
 
     return ts_path
 
-# -------------- CLI --------------
-def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Dynamic Quantization for torchvision mobile models")
-    p.add_argument("-v", "--verbose", action="count", default=0, help="-v=INFO, -vv=DEBUG")
-
-    p.add_argument("--model",
-                   type=str,
-                   default="mobilenet_v2",
-                   choices=list(MODEL_REGISTRY.keys()),
-                   help=f"Welches Modell? Optionen: {', '.join(MODEL_REGISTRY.keys())}")
-
-    p.add_argument("--out-dir",
-                   type=str,
-                   required=True,
-                   help="Zielverzeichnis (state_dict/metadata werden hier erwartet oder abgelegt)")
-
-    p.add_argument("--engine",
-                   type=str,
-                   choices=["qnnpack", "fbgemm", "auto"],
-                   default="auto",
-                   help="Quantization engine (auto=ARM→qnnpack, x86→fbgemm)")
-
-    p.add_argument("--trace-size",
-                   type=int,
-                   default=224,
-                   help="Inputgröße für TorchScript-Tracing (meist 224)")
-
-    p.add_argument("--force-download",
-                   action="store_true",
-                   help="FP32-Gewichte/Metadata neu herunterladen, selbst wenn vorhanden")
-
-    return p
-
-def main():
-    parser = build_parser()
-    args = parser.parse_args()
-    setup_logging(args.verbose)
-
-    out_dir = Path(args.out_dir).expanduser().resolve()
-    safe_make_dir(out_dir)
-
-    engine = infer_default_engine() if args.engine == "auto" else args.engine
-    if args.force_download:
-        # erzwinge frischen Download der FP32-Basis
-        ctor, weights_path = MODEL_REGISTRY[args.model]
-        weights = resolve_weights(weights_path)
-        model = ctor(weights=weights).eval()
-        sd_path = out_dir / f"{args.model}_state_dict.pt"
-        torch.save(model.state_dict(), sd_path)
-        preprocess = extract_preprocess_from_weights(weights)
-        save_metadata(out_dir, args.model, weights_path, preprocess, quant={"type": "none"})
-        logging.info("FP32-Basis neu geladen/gespeichert.")
-
-    # Quantisieren & speichern
-    ts_path = dynamic_quantize(args.model, out_dir, engine, args.trace_size)
-    print(f"\nFertig. Quantisiertes TorchScript: {ts_path}")
-
-if __name__ == "__main__":
-    main()

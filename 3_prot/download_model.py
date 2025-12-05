@@ -76,10 +76,11 @@ def cmd_download(ctx:Context) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     
+    
     if model_name not in mod_reg:
         raise ValueError(f"Unknown model '{model_name}'. Supporting only: {', '.join(mod_reg)}")
 
-    ctor, weights_path = mod_reg[model_name]
+    ctor, weights_path,_,_ = mod_reg[model_name]
     weights = resolve_weights(weights_path)
 
     logger.info(f"Loaded {model_name} with {weights_path} …")

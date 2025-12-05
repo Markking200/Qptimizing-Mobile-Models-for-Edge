@@ -21,6 +21,9 @@ from context import Context
 from download_model import resolve_weights
 from torch.ao.quantization import QConfigMapping
 
+IMAGE_POOL = 1000
+SEED = 42
+
 
 def static_download(ctx:Context) -> None:
 
@@ -46,7 +49,7 @@ def static_download(ctx:Context) -> None:
     backend = platform.machine().lower()
     torch.backends.quantized.engine = "qnnpack" if ("arm" in backend or "aarch64" in backend) else "fbgemm"
 
-    ctor, weights_path = mod_reg[model_name]
+    ctor, weights_path,_,dataset_name = mod_reg[model_name]
     weights = resolve_weights(weights_path)
 
     model_fp32 = ctor(weights=weights).eval()
@@ -66,39 +69,85 @@ def static_download(ctx:Context) -> None:
     qconfig_mapping = QConfigMapping().set_global(qconfig)
 
     #old qconfig_dict 
-    #qconfig_dict = {"": qconfig}
+    #qconfig_dict = {"": qconfig}o
     example_inputs = torch.randn(1, 3, image_size, image_size)
     prepared = quantize_fx.prepare_fx(model_fp32, qconfig_mapping, example_inputs=example_inputs)
 
-    def load_and_preprocess(path: Path):
-        try:
-            img = Image.open(path).convert("RGB")
-            return preprocess(img).unsqueeze(0)
-        except Exception as e:
-            logger.warning(f"Konnte Bild {path} nicht laden: {e}")
-            return None
-    
-    #calib_dir = Path("/home/University/BA/archive\(1\)//allimages")
-    calib_dir = Path(os.path.abspath("../data/calibration2"))  # lege dort 50–200 Bilder ab (beliebige natürliche Fotos)
-    #print(calib_dir)
-    #print(list(calib_dir.glob("*.jpg")))
-    #dataset = load_dataset("imagenet-1k",split="validation")
-    calibration_dataset = list(calib_dir.glob("*.jpg"))
+    calib_images = IMAGE_POOL  # <- HIER festlegen
+    calib_seed   = SEED
+
+    # Dataset-Name aus MODEL_REGISTRY (4. Element im Tupel)
+    # (falls du oben bereits sauber unpackst, nimm einfach dataset_name = dataset_name)
+    #dataset_name = mod_reg[model_name][3]  # erwartet: (ctor, weights, task, dataset)
+
+    # Map "Anzeige-Name" -> HuggingFace Dataset ID + Split
+    # (erweitere das bei Bedarf um weitere Datasets)
+    DATASET_MAP = {
+        "ImageNet-1K": ("imagenet-1k", "validation"),
+    }
+
+    hf_id, hf_split = DATASET_MAP.get(dataset_name, (dataset_name, "validation"))
+
+    logger.info(f"Calibration Dataset: {dataset_name} -> HF='{hf_id}' split='{hf_split}', samples={calib_images}, seed={calib_seed}")
+
     try:
+        # streaming=True ist für Calibration super (du brauchst kein len()/shuffle=True im DataLoader)
+        calib_ds = load_dataset(
+            hf_id,
+            split=hf_split,
+            streaming=True,
+            cache_dir=os.path.abspath("../data/huggingface"),
+        )
+
+        # reproducible random sample (buffered shuffle)
+        # (buffer_size ruhig größer machen, wenn du willst)
+        calib_ds = calib_ds.shuffle(seed=calib_seed, buffer_size=10_000)
+
+        def to_input(example):
+            img = example.get("image", None)
+            if img is None:
+                return None
+            if not isinstance(img, Image.Image):
+                img = Image.fromarray(img)
+            img = img.convert("RGB")
+            x = preprocess(img).unsqueeze(0)
+            return x
+
         with torch.inference_mode():
-                #for i in range(200):
-                imageindex = 0
-                #for fname in list(calib_dir.glob("*.jpg"))[:6500]:
-                for i in range(100):
-                    #y = random.randint(0,49999)
-                    #torch.rand(1,3,224, 224)
-                    #print(fname)
-                    x = load_and_preprocess(calibration_dataset[i])
-                    #x = dataset[y]['image']
-                    prepared(x)  # nur forward, keine Labels nötig
+            taken = 0
+            for ex in calib_ds.take(calib_images):
+                x = to_input(ex)
+                if x is None:
+                    continue
+                prepared(x)  # forward only
+                taken += 1
+
+        logger.info(f"Calibration done. Successfully used {taken} samples.")
+
     except Exception as e:
-        print(e)
-    
+        logger.warning(f"HF calibration failed ({e}). Falling back to local images in ../data/calibration2")
+
+        # Fallback: wie vorher lokale JPGs
+        calib_dir = Path(os.path.abspath("../data/calibration2"))
+        calibration_dataset = list(calib_dir.glob("*.jpg"))
+        random.Random(calib_seed).shuffle(calibration_dataset)
+
+        def load_and_preprocess(path: Path):
+            try:
+                img = Image.open(path).convert("RGB")
+                return preprocess(img).unsqueeze(0)
+            except Exception as ee:
+                logger.warning(f"Konnte Bild {path} nicht laden: {ee}")
+                return None
+
+        with torch.inference_mode():
+            for p in calibration_dataset[:calib_images]:
+                x = load_and_preprocess(p)
+                if x is None:
+                    continue
+                prepared(x)
+
+    # nach der Calibration konvertieren
     model_int8 = quantize_fx.convert_fx(prepared).eval()
 
     example = torch.randn(1, 3, image_size, image_size)

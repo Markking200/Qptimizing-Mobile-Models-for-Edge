@@ -13,11 +13,16 @@ from torchvision import transforms
 from datasets import load_dataset
 from tqdm import tqdm
 from PIL import Image
+import sys
+from pathlib import Path
+
+
+from third_prot.context import Context
 
 # -------- Config --------
-MODEL_PATH = "../opt/models/mobilenet_v2_static/image500.pt"   # dein TorchScript-INT8-Modell
+MODEL_PATH = "/home/marceldavis/University/BA/FirstZoo/opt/models/efficientnet_b0/efficientnet_b0_ts.pt"   # dein TorchScript-INT8-Modell
 BATCH_SIZE = 64                              # CPU-geeignet; an deine Maschine anpassen
-NUM_WORKERS = 100                              # DataLoader-Worker (0 auf Windows)
+NUM_WORKERS = 12                              # DataLoader-Worker (0 auf Windows)
 PIN_MEMORY = False                           # CPU-Only -> False
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD  = [0.229, 0.224, 0.225]
@@ -25,7 +30,8 @@ RESIZE_SHORTER = 256
 CROP_SIZE = 224
 SPLIT = "validation"                         # 50k val
 SUBSET = None                                # z.B. "validation[:5000]" für schnellen Test
-MAX_SAMPLES = 500                        # number of samples to eval (total will be MAX_SAMPLES * NUM_WORKERS if NUM_WORKERS>0)
+MAX_SAMPLES = 50                        # number of samples to eval (total will be MAX_SAMPLES * NUM_WORKERS if NUM_WORKERS>0)
+MODEL_PATH = "../modelzoo/"
 
 
 # currently for streaming = True => IterableDataset, if dataset is downloaded HFImageNetDataset can inherit from Dataset
@@ -81,32 +87,77 @@ def topk_correct(logits: torch.Tensor, target: torch.Tensor, k: int = 5) -> int:
     correct = (pred == target.view(-1, 1)).any(dim=1).sum().item()
     return correct
 
+def main(ctx: Context = None):
+    if ctx is None:
+        return
+    args = ctx.args
+    path = args.modeldir
+    samplesize = args.samplesize
+    all = args.all
+    mod_reg = ctx.MODEL_REGISTRY
+    logger = ctx.logger
 
-def main():
+    if all == False:
+        if path is None:
+            logger.error("Please provide model directory path using --modeldir")
+            return
+        dir = Path(path).expanduser().resolve()
+        pt_path = next(
+                (p for p in dir.rglob("*.pt") if "dict" not in p.name.lower()),
+                None
+            )
+        if pt_path is None:
+            raise FileNotFoundError(f"Keine .pt Datei in {dir} gefunden")
+        if samplesize is None:
+            samplesize = MAX_SAMPLES
+        benchmark(pt_path, samplesize,logger)
+    
+    if all == True:
+        for model_name in mod_reg:
+            dir = Path(MODEL_PATH).expanduser().resolve() / model_name
+            pt_path = next(
+                            (p for p in dir.rglob("*.pt") if "dict" not in p.name.lower()),
+                            None
+                        )
+            if pt_path is None:
+                logger.error(f"Keine .pt Datei in {dir} gefunden, überspringe...")
+                return
+            if samplesize is None:
+                samplesize = MAX_SAMPLES
+            logger.info(f"Benchmarking model: {model_name}")
+            benchmark(pt_path, samplesize,logger)
+
+
+def benchmark(path, size,logger):
+    
+
+
+    path_str = str(path.resolve())
+
     # 1) Modell laden (TorchScript INT8 -> CPU)
-    print(f"[INFO] Loading TorchScript model from: {MODEL_PATH}")
-    model = torch.jit.load(MODEL_PATH, map_location="cpu")
+    logger.info(f"[INFO] Loading TorchScript model from: {path}")
+    model = torch.jit.load(path, map_location="cpu") #"cuda" if torch.cuda.is_available() else 
     #activates inference mode, forecast gets deterministic, 
     model.eval()
-    print("[INFO] Model loaded. Running on CPU (INT8).")
+    logger.info("[INFO] Model loaded. Running on CPU (INT8).")
 
     # 2) Dataset laden (HuggingFace)
     split_str = SUBSET if SUBSET is not None else SPLIT
-    print(f"[INFO] Loading ImageNet-1k split from Hugging Face: {split_str}")
+    logger.info(f"[INFO] Loading ImageNet-1k split from Hugging Face: {split_str}")
     hf_ds = load_dataset("imagenet-1k", split=split_str,streaming=True)#cache_dir="/home/marceldavis/University/BA/FirstZoo/data/huggingfaceval")
     #n_samples = len(hf_ds)
     #print(f"[INFO] Dataset size: {n_samples} images")
 
     # 3) Preprocessing + DataLoader
     preprocess = build_preprocess()
-    ds = HFImageNetDataset(hf_ds, preprocess,max_samples=MAX_SAMPLES)
+    ds = HFImageNetDataset(hf_ds, preprocess,max_samples=size)
 
     # Collate: default stack reicht (x: (3,H,W), y: int)
     loader = DataLoader(
         ds,
         batch_size=BATCH_SIZE,
         shuffle=False,
-        num_workers=NUM_WORKERS,
+        num_workers=0,#NUM_WORKERS,
         pin_memory=PIN_MEMORY,
         drop_last=False,
     )
@@ -146,19 +197,19 @@ def main():
     top1 = top1_correct / total
     top5 = top5_correct / total
 
-    print("\n================= Results =================")
-    print(f"Samples evaluated : {total}")
-    print(f"Top-1 Accuracy    : {top1:.4%}")
-    print(f"Top-5 Accuracy    : {top5:.4%}")
-    print(f"Total time (s)    : {dt:.1f}")
-    print(f"Throughput (img/s): {total / dt:.1f}")
-    print("===========================================\n")
+    logger.info("\n================= Results =================")
+    logger.info(f"Samples evaluated : {total}")
+    logger.info(f"Top-1 Accuracy    : {top1:.4%}")
+    logger.info(f"Top-5 Accuracy    : {top5:.4%}")
+    logger.info(f"Total time (s)    : {dt:.1f}")
+    logger.info(f"Throughput (img/s): {total / dt:.1f}")
+    logger.info("===========================================\n")
 
     log_path = "accuracy_benchmark_results.txt"
 
     line = (
         "\n================= Results =================\n"
-        f"Model: {MODEL_PATH}\n"
+        f"Model: {path}\n"
         f"Samples: {total}, \n"
         f"Top-1: {top1:.4%}, \n"
         f"Top-5: {top5:.4%}, \n"
@@ -171,7 +222,7 @@ def main():
     with open(log_path, "a", encoding="utf-8") as f:
         f.write(line)
 
-    print(f"[INFO] Results appended to {log_path}")
+    logger.info(f"[INFO] Results appended to {log_path}")
 
 
 if __name__ == "__main__":

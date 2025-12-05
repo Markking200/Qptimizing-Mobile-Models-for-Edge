@@ -70,3 +70,12 @@ Top-5 Accuracy    : 87.9000%
 Total time (s)    : 139.3
 Throughput (img/s): 28.7
 ===========================================
+
+================= Results =================
+Model: /home/marceldavis/University/BA/FirstZoo/opt/models/efficientnet_b0/efficientnet_b0_ts.pt
+Samples: 600, 
+Top-1: 82.8333%, 
+Top-5: 94.6667%, 
+Time: 200.5s, 
+Throughput: 3.0 img/s
+===========================================
